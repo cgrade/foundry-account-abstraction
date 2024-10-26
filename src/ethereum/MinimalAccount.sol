@@ -10,8 +10,21 @@ import {SIG_VALIDATION_SUCCESS, SIG_VALIDATION_FAILED} from "account-abstraction
 import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
 
 contract MinimalAccount is IAccount, Ownable {
+    /*//////////////////////////////////////////////////////////////
+                                CUSTOM ERRORS
+    //////////////////////////////////////////////////////////////*/
+    error MinimalAccount__NotFromEntryPoint(address);
+    error MinimalAccount__NotFromEntryPointOrOwner(address);
+    error MinimalAccount__ExecutionFailed(bytes);
+
+    /*//////////////////////////////////////////////////////////////
+                                STATE VARIABLES
+    //////////////////////////////////////////////////////////////*/
     IEntryPoint private immutable _entryPoint;
 
+    /*//////////////////////////////////////////////////////////////
+                                MODIFIERS
+    //////////////////////////////////////////////////////////////*/
     modifier requireFromEntryPoint() {
         if (msg.sender != address(_entryPoint)) {
             revert MinimalAccount__NotFromEntryPoint(msg.sender);
@@ -19,13 +32,30 @@ contract MinimalAccount is IAccount, Ownable {
         _;
     }
 
+    modifier fromEntryPointOrOwner() {
+        if (msg.sender != address(_entryPoint) && msg.sender != owner()) {
+            revert MinimalAccount__NotFromEntryPointOrOwner(msg.sender);
+        }
+        _;
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                             FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     constructor(address entryPoint) Ownable(msg.sender) {
         _entryPoint = IEntryPoint(entryPoint);
     }
 
+    receive() external payable {}
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    function execute(address target, uint256 value, bytes calldata functionData) external fromEntryPointOrOwner {
+        (bool success, bytes memory result) = target.call{value: value}(functionData);
+        if (!success) revert MinimalAccount__ExecutionFailed(result);
+    }
 
     // A signature is valid if it's the MinimalAccount Owner
     function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash, uint256 missingAccountFunds)
