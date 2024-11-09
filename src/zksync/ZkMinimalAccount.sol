@@ -24,55 +24,66 @@ import {Ownable} from "lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import {MessageHashUtils} from "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /**
- * --------Lifecycle of a type 113 (0x71) transaction:--------------
+ * @title ZkMinimalAccount
+ * @author Abraham Elijah (Mr. Grade)
+ * @notice A minimal implementation of a zkSync Era account abstraction contract
+ * @dev Implements type 113 (0x71) transaction lifecycle:
  * 1. validateTransaction
- *     - the user sends the transaction to the "zkSync" API Client
- *     - the zkSync API Client checks to see the nonce is unique querying the NonceHolder system contract
- *     - the zkSync API client calls "validateTransaction" on the Account contract which must update the nonce.
- *     - The zkSync API client checks the nonce is updated.
- *     - The zkSync API client calls "payForTransaction, or prepareForPaymaster & validatePaymasterTransaction" on the Account contract.
- *     - the zkSync API client verifies that the bootloader gets paid.
+ *     - User sends transaction to zkSync API Client
+ *     - API Client verifies nonce uniqueness via NonceHolder system contract
+ *     - API Client calls validateTransaction on Account contract to update nonce
+ *     - API Client verifies nonce update
+ *     - API Client calls payForTransaction or prepareForPaymaster & validatePaymasterTransaction
+ *     - API Client verifies bootloader payment
  *
  * 2. executeTransaction
- *     - the zkSync API client calls "executeTransaction" on the Account contract.
- *     - the Account contract verifies the transaction is valid and then calls the callee.
+ *     - API Client calls executeTransaction on Account contract
+ *     - Account contract validates and executes the transaction
+ *
  * 3. executeTransactionFromOutside
+ *     - External entry point for direct transaction execution
  */
 contract ZkMinimalAccount is IAccount, Ownable {
     using MemoryTransactionHelper for Transaction;
 
     /*//////////////////////////////////////////////////////////////
-                                 ERROR
+                                 ERRORS
     //////////////////////////////////////////////////////////////*/
+    /// @notice Thrown when account balance is insufficient for transaction
     error ZkMinimalAccount__NotEnoughBalance();
+    /// @notice Thrown when caller is not the bootloader
     error ZkMinimalAccount__NotFromBootLoader();
+    /// @notice Thrown when transaction execution fails
     error ZkMinimalAccount__ExecutionFailed();
+    /// @notice Thrown when payment to bootloader fails
     error ZkMinimalAccount__FailedToPay();
 
     /*//////////////////////////////////////////////////////////////
                                MODIFIERS
     //////////////////////////////////////////////////////////////*/
-
+    
+    /// @notice Ensures the caller is the bootloader
     modifier requireFromBootloader() {
         if (msg.sender != BOOTLOADER_FORMAL_ADDRESS) {
             revert ZkMinimalAccount__NotFromBootLoader();
             _;
         }
     }
+
     /*//////////////////////////////////////////////////////////////
-                           EXTERNAL FUNCTION
+                           EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /// @notice Initializes the contract with the deployer as owner
     constructor() Ownable(msg.sender) {}
 
     /**
-     * @notice Must Increase the nonce.
-     * @notice Must validate the transaction (check the owner signed the transaction)
-     * @notice Also checkes to see if we have enough money in our account.
-     * @param _txHash The hash of the transaction.
-     * @param _suggestedSignedHash The suggested signed hash of the transaction.
-     * @param _transaction The transaction to validate.
-     * @return magic The magic value indicating the success of the transaction validation.
+     * @notice Validates a transaction by checking signature and updating nonce
+     * @dev Must increase nonce and validate owner signature
+     * @param _txHash Transaction hash
+     * @param _suggestedSignedHash Suggested signed hash
+     * @param _transaction Transaction to validate
+     * @return magic Success validation magic value
      */
     function validateTransaction(bytes32 _txHash, bytes32 _suggestedSignedHash, Transaction calldata _transaction)
         external
@@ -82,6 +93,12 @@ contract ZkMinimalAccount is IAccount, Ownable {
         _validateTransaction(_transaction);
     }
 
+    /**
+     * @notice Executes a validated transaction
+     * @param _txHash Transaction hash (unused)
+     * @param _suggestedSignedHash Suggested signed hash (unused)
+     * @param _transaction Transaction to execute
+     */
     function executeTransaction(
         bytes32, /* _txHash */
         bytes32, /*_suggestedSignedHash*/
@@ -93,6 +110,10 @@ contract ZkMinimalAccount is IAccount, Ownable {
         }
     }
 
+    /**
+     * @notice Allows external execution of transactions
+     * @param _transaction Transaction to execute
+     */
     function executeTransactionFromOutside(Transaction calldata _transaction) external payable {
         _validateTransaction(_transaction);
         bool success = _executeTransaction(_transaction);
@@ -101,6 +122,12 @@ contract ZkMinimalAccount is IAccount, Ownable {
         }
     }
 
+    /**
+     * @notice Handles payment for transaction execution
+     * @param _txHash Transaction hash
+     * @param _suggestedSignedHash Suggested signed hash
+     * @param _transaction Transaction to pay for
+     */
     function payForTransaction(bytes32 _txHash, bytes32 _suggestedSignedHash, Transaction calldata _transaction)
         external
         payable
@@ -111,6 +138,12 @@ contract ZkMinimalAccount is IAccount, Ownable {
         }
     }
 
+    /**
+     * @notice Prepares transaction for paymaster
+     * @param _txHash Transaction hash
+     * @param _possibleSignedHash Possible signed hash
+     * @param _transaction Transaction to prepare
+     */
     function prepareForPaymaster(bytes32 _txHash, bytes32 _possibleSignedHash, Transaction calldata _transaction)
         external
         payable
@@ -120,10 +153,14 @@ contract ZkMinimalAccount is IAccount, Ownable {
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /**
+     * @notice Internal transaction validation logic
+     * @dev Validates nonce, balance, and signature
+     * @param _transaction Transaction to validate
+     * @return magic Validation success magic value
+     */
     function _validateTransaction(Transaction calldata _transaction) internal returns (bytes4 magic) {
-        // call nonceHolder
-        // increment nonce
-        // call(x, y, z) -> system contract call
+        // Increment nonce in NonceHolder system contract
         SystemContractsCaller.systemCallWithPropagatedRevert(
             uint32(gasleft()),
             address(NONCE_HOLDER_SYSTEM_CONTRACT),
@@ -131,34 +168,39 @@ contract ZkMinimalAccount is IAccount, Ownable {
             abi.encodeCall(INonceHolder.incrementMinNonceIfEquals, (_transaction.nonce))
         );
 
-        // Check for Fee to Pay
+        // Verify sufficient balance
         uint256 totalRequiredBlance = _transaction.totalRequiredBalance();
         if (totalRequiredBlance > address(this).balance) {
             revert ZkMinimalAccount__NotEnoughBalance();
         }
 
-        // Check  the signature
+        // Verify signature
         bytes32 txHash = _transaction.encodeHash();
         bytes32 convertedHash = MessageHashUtils.toEthSignedMessageHash(txHash);
         address signer = ECDSA.recover(convertedHash, _transaction.signature);
         bool isValidSigner = signer == owner();
-        if (isValidSigner) {
-            magic = ACCOUNT_VALIDATION_SUCCESS_MAGIC;
-        } else {
-            magic = bytes4(0);
-        }
-        return magic;
+        
+        return isValidSigner ? ACCOUNT_VALIDATION_SUCCESS_MAGIC : bytes4(0);
     }
 
+    /**
+     * @notice Internal transaction execution logic
+     * @dev Handles both system contract and regular calls
+     * @param _transaction Transaction to execute
+     * @return success Whether the execution was successful
+     */
     function _executeTransaction(Transaction calldata _transaction) internal returns (bool) {
         address to = address(uint160(_transaction.to));
         uint128 value = Utils.safeCastToU128(_transaction.value);
         bytes memory data = _transaction.data;
+
+        // Special handling for deployer system contract
         if (to == address(DEPLOYER_SYSTEM_CONTRACT)) {
             uint32 gas = Utils.safeCastToU32(gasleft());
             SystemContractsCaller.systemCallWithPropagatedRevert(gas, to, value, data);
             return true;
         } else {
+            // Regular transaction execution
             bool success;
             assembly {
                 success := call(gas(), to, value, add(data, 0x20), mload(data), 0, 0)
