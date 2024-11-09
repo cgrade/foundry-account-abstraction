@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IAccount} from "account-abstraction/interfaces/IAccount.sol";
-import {PackedUserOperation} from "account-abstraction/interfaces/PackedUserOperation.sol";
-import {Ownable} from "openzeppelin/access/Ownable.sol";
-import {MessageHashUtils} from "openzeppelin/utils/cryptography/MessageHashUtils.sol";
-import {ECDSA} from "openzeppelin/utils/cryptography/ECDSA.sol";
-import {SIG_VALIDATION_SUCCESS, SIG_VALIDATION_FAILED} from "account-abstraction/core/Helpers.sol";
-import {IEntryPoint} from "account-abstraction/interfaces/IEntryPoint.sol";
+import {IAccount} from "lib/account-abstraction/contracts/interfaces/IAccount.sol";
+import {PackedUserOperation} from "lib/account-abstraction/contracts/interfaces/PackedUserOperation.sol";
+import {Ownable} from "lib/openzeppelin-contracts/contracts/access/Ownable.sol";
+import {MessageHashUtils} from "lib/openzeppelin-contracts/contracts/utils/cryptography/MessageHashUtils.sol";
+import {ECDSA} from "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+import {SIG_VALIDATION_SUCCESS, SIG_VALIDATION_FAILED} from "lib/account-abstraction/contracts/core/Helpers.sol";
+import {IEntryPoint} from "lib/account-abstraction/contracts/interfaces/IEntryPoint.sol";
 
 contract MinimalAccount is IAccount, Ownable {
     /*//////////////////////////////////////////////////////////////
@@ -16,6 +16,7 @@ contract MinimalAccount is IAccount, Ownable {
     error MinimalAccount__NotFromEntryPoint(address);
     error MinimalAccount__NotFromEntryPointOrOwner(address);
     error MinimalAccount__ExecutionFailed(bytes);
+    error MinimalAccount__NotOwner();
 
     /*//////////////////////////////////////////////////////////////
                                 STATE VARIABLES
@@ -96,7 +97,7 @@ contract MinimalAccount is IAccount, Ownable {
                                 GETTERS
     //////////////////////////////////////////////////////////////*/
 
-    function entryPoint() external view returns (IEntryPoint) {
+    function getEntryPoint() external view returns (IEntryPoint) {
         return _entryPoint;
     }
 }

@@ -1,0 +1,8 @@
+{
+    "figma.autocompleteBlocks": true,
+    "cursor.chat.showSuggestedFiles": true,
+    "cursor.cpp.enablePartialAccepts": true,
+    "debug.console.acceptSuggestionOnEnter": "on",
+    "editor.suggest.preview": true,
+    "editor.suggest.shareSuggestSelections": true
+}
